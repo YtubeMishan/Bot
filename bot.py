@@ -5,7 +5,7 @@ from telegram import Bot
 
 # === CONFIG ===
 BOT_TOKEN = "7769439864:AAFFaISjadlMAgY-tAr-2BQ5wJZdu85U6QU"
-CHANNEL_ID = "-1002898322642"  # Your Telegram channel ID here
+CHANNEL_ID = "-1002898322642"  # Replace with your actual channel ID
 
 bot = Bot(token=BOT_TOKEN)
 
@@ -22,11 +22,17 @@ def fetch_latest_result():
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
+
         response = requests.get(url, headers=headers)
+        print(f"Status Code: {response.status_code}")
+        print("Raw Response Text:", response.text[:300])  # Print the first 300 chars of response
+
         response.raise_for_status()
-        data = response.json()
+        data = response.json()  # This will fail if response is not JSON
+
         result_list = data.get("list", [])
         if not result_list:
+            logging.warning("Empty result list in API response.")
             return None, None
 
         latest = result_list[0]

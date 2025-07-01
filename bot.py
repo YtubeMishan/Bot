@@ -6,7 +6,6 @@ from telegram import Bot
 # === CONFIG ===
 BOT_TOKEN = "7769439864:AAFFaISjadlMAgY-tAr-2BQ5wJZdu85U6QU"
 CHANNEL_ID = "-1002898322642"
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json"
 
 bot = Bot(token=BOT_TOKEN)
 
@@ -19,7 +18,9 @@ predicted_for = None
 
 def fetch_latest_result():
     try:
-        response = requests.get(API_URL)
+        ts = int(time.time() * 1000)  # current timestamp in milliseconds
+        url = f"https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={ts}"
+        response = requests.get(url)
         data = response.json()
         result_list = data.get("list", [])
         if not result_list:

@@ -1,160 +1,107 @@
-import time
-import requests
 import logging
-from telegram import Bot
+import asyncio
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
+# ==== CONFIGURATION ====
+BOT_TOKEN = '7769439864:AAHoR601B2jzOzdIIlzShyTFO-twgsqcGkM'
+OWNER_ID = 7912905599
+CHANNEL_ID = -1002898322642  # @wingo30s_predict
+
+# ==== LOGGING ====
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "7769439864:AAFFaISjadlMAgY-tAr-2BQ5wJZdu85U6QU"  # your bot token
-CHANNEL_ID = "@Wingo30sec_PredictChannel"  # your telegram channel or chat id
+# ==== GLOBAL VARIABLES ====
+predicting = False
+current_period = None
+current_prediction = None
+prediction_task = None
 
-bot = Bot(token=BOT_TOKEN)
+# ==== MESSAGE FORMAT ====
+def format_message(period: str, prediction: str) -> str:
+    return f"""
+✅𝘮𝘰𝘫𝘴 𝘪𝘦𝘭𝘪 
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-    "Referer": "https://dkwin9.com/",
-    "Origin": "https://dkwin9.com",
-    "Accept": "application/json, text/javascript, */*; q=0.01",
-    "X-Requested-With": "XMLHttpRequest",
-}
+⏩⏩⏩⏩  ⏪⏪⏪⏪ ({period}) 
 
-# Optional: fill with cookies copied from browser if needed, else keep empty
-COOKIES = {
-    # "cookie_name": "cookie_value",
-}
+⚔️𝘬𝘮𝘴𝘰𝘮 30𝘮𝘴 ⏪
 
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json"
+❤️‍🔥ℙ𝘳𝘮𝘴𝘮𝘴𝘫𝘮 ⚡️⏩⏩  ⏪⏪⚡️ ({prediction.upper()})
 
-def fetch_results():
+💲𝘪𝘬𝘴𝘮 𝘦𝘪𝘴𝘮𝘯𝘰
+             𝘪𝘦𝘭𝘪
+
+Maintain ⚔️
+
+𝘭𝘰 𝘵𝘮𝘫 ⏩ 𝘭𝘶 𝘪𝘮𝘭𝘰𝘪𝘱 
+
+𝘭𝘮 𝘴𝘮 𝘮𝘱𝘦𝘭 𝘭𝘶♻️
+
+𝘭𝘮 𝘫𝘮𝘭𝘰"""
+
+# ==== PREDICTION LOOP ====
+async def prediction_loop(application):
+    global predicting, current_period
+    while predicting:
+        text = format_message(current_period, current_prediction)
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ ITM", callback_data="itm")]
+        ])
+        await application.bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=keyboard)
+
+        await asyncio.sleep(30)
+        current_period = str(int(current_period) + 1)
+
+# ==== COMMAND HANDLERS ====
+async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global predicting, current_period, current_prediction, prediction_task
+
+    if update.effective_user.id != OWNER_ID:
+        return
+
     try:
-        params = {"ts": int(time.time() * 1000)}
-        resp = requests.get(API_URL, headers=HEADERS, cookies=COOKIES, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        return data
+        args = update.message.text.split()
+        if len(args) != 2:
+            await update.message.reply_text("Send in format: <period> <big/small>")
+            return
+
+        current_period = args[0]
+        current_prediction = args[1].lower()
+        predicting = True
+
+        await update.message.reply_text(f"Started predicting {current_prediction.upper()} from period {current_period}")
+
+        prediction_task = asyncio.create_task(prediction_loop(context.application))
+
     except Exception as e:
-        logging.error(f"Error fetching result: {e}")
-        return None
+        logger.error(f"Error: {e}")
+        await update.message.reply_text("Something went wrong.")
 
-def parse_results(data):
-    # Extract last 2 results: assume 'result' field contains 'big' or 'small'
-    # You need to check exact JSON structure from API response
-    try:
-        history = data['result']['data']
-        last_two = history[:2]  # latest two rounds
-        last_results = []
-        last_periods = []
-        for item in last_two:
-            # Example: "result" field might be number or string
-            # You must map to 'big' or 'small'
-            res = item['result']  # adjust based on actual data key
-            period = item['period']
-            # Assuming result is numeric, define small/big
-            # Change threshold as per your game rules
-            if isinstance(res, str):
-                # If already 'big' or 'small', use directly
-                result_str = res.lower()
-            else:
-                # numeric result to big/small, example threshold 5
-                result_str = "big" if int(res) > 5 else "small"
+async def stop_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global predicting, prediction_task
 
-            last_results.append(result_str)
-            last_periods.append(period)
-        return last_results, last_periods[0]  # last_results[0] = latest result, period is the latest period
-    except Exception as e:
-        logging.error(f"Error parsing result data: {e}")
-        return None, None
+    if update.effective_user.id != OWNER_ID:
+        return
 
-def predict_next(last_two_results):
-    # Your algorithm:
-    # If last 2 results small => predict big until big appears, then wait for 2 small again
-    # If last 2 results big => predict small until small appears, then wait for 2 big again
+    predicting = False
+    if prediction_task:
+        prediction_task.cancel()
+        prediction_task = None
 
-    if len(last_two_results) < 2:
-        return None
+    await update.callback_query.answer("Stopped. ITM achieved!")
+    await update.callback_query.message.reply_text("✅ Profit achieved. Bot stopped.")
 
-    last1, last2 = last_two_results[0], last_two_results[1]
+# ==== MAIN ====
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Initialize static variables to hold state
-    if not hasattr(predict_next, "waiting_for_big"):
-        predict_next.waiting_for_big = False
-        predict_next.waiting_for_small = False
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start_prediction))
+    app.add_handler(CallbackQueryHandler(stop_prediction, pattern="itm"))
 
-    if last1 == last2 == "small":
-        predict_next.waiting_for_big = True
-        predict_next.waiting_for_small = False
-        return "big"
-    elif last1 == last2 == "big":
-        predict_next.waiting_for_small = True
-        predict_next.waiting_for_big = False
-        return "small"
+    print("Bot is running...")
+    await app.run_polling()
 
-    # if waiting_for_big is True, predict big until big appears
-    if predict_next.waiting_for_big:
-        if last1 == "big":
-            # stop waiting, wait for 2 small
-            predict_next.waiting_for_big = False
-            return None
-        else:
-            return "big"
-
-    # if waiting_for_small is True, predict small until small appears
-    if predict_next.waiting_for_small:
-        if last1 == "small":
-            # stop waiting, wait for 2 big
-            predict_next.waiting_for_small = False
-            return None
-        else:
-            return "small"
-
-    return None
-
-def format_message(period, prediction):
-    msg = f"""✅𝗣𝗲𝗿𝗶𝗼𝗱 𝗡𝘂𝗺𝗯𝗲𝗿
-
-⏩⏩⏩⏩  ⏪⏪⏪⏪ {period}
-
-⚜️𝗪𝗶𝗻𝗴𝗼 𝟯𝟬𝘀𝗲𝗰 ⏪
-
-❤️‍🔥𝑷𝒓𝒆𝒅𝒊𝒄𝒕 ⚡️⏩⏩  ⏪⏪⚡️ {prediction.upper()}
-
-💲𝗚𝗮𝗺𝗲 𝗡𝗮𝗺𝗲👇👇
-          𝗪𝗶𝗻𝗴𝗼
-
-Maintain ⚜️
-
-𝟭𝘀𝘁 𝗕𝗜𝗗 ⏩ 𝟭𝘅 𝗠𝗮𝗶𝗻𝘁𝗮𝗶𝗻
-
-𝗜𝗙 𝗪𝗜𝗡 𝗔𝗴𝗮𝗶𝗻 𝟭𝘅♻️
-
-𝗜𝗙 𝗟𝗢𝗦𝗦  𝟮𝘅 
-𝗔𝗚𝗔𝗜𝗡 𝗟𝗢𝗦𝗦 𝟯𝘅 𝗟𝗢𝗦𝗦 𝟰𝘅 𝗟𝗢𝗦𝗦 𝟱𝘅 𝗟𝗢𝗦𝗦 𝟲𝘅 𝗟𝗢𝗦𝗦 𝟳𝘅 𝗟𝗢𝗦𝗦 𝟴𝘅
-
-𝟴𝘅 𝗪𝗶𝗹𝗹 𝗦𝘂𝗽𝗲𝗿𝗦𝗵𝗼𝘁🤑💲
-"""
-    return msg
-
-def main():
-    while True:
-        data = fetch_results()
-        if data:
-            last_results, last_period = parse_results(data)
-            if last_results and last_period:
-                prediction = predict_next(last_results)
-                if prediction:
-                    message = format_message(last_period, prediction)
-                    try:
-                        bot.send_message(CHANNEL_ID, message)
-                        logging.info(f"Sent prediction for period {last_period}: {prediction}")
-                    except Exception as e:
-                        logging.error(f"Telegram send error: {e}")
-                else:
-                    logging.info("No prediction to send this round.")
-            else:
-                logging.warning("Failed to parse results.")
-        else:
-            logging.warning("Failed to fetch results.")
-        time.sleep(30)  # repeat every 30 seconds
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    asyncio.run(main())

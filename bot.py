@@ -1,108 +1,48 @@
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    ContextTypes, MessageHandler, filters
-)
-import asyncio
-from prediction import PredictionManager
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
-# === CONFIG ===
-BOT_TOKEN = "6524072744:AAGLnv-NvVKvQDw_JPlEp6byMvHzsVuOCWg"
-OWNER_ID = 7912905599
-CHANNEL_ID = -1002898322642  # or @wingo30s_predict
+# Replace with your actual bot token
+BOT_TOKEN = "7769439864:AAHoR601B2jzOzdIIlzShyTFO-twgsqcGkM"
 
-# === LOGGING ===
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+OWNER_ID = 7912905599  # Your Telegram user ID
 
-# === GLOBAL STATE ===
-manager = PredictionManager()
-
-# === HANDLERS ===
-
-async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Command handler: /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
-        await update.message.reply_text("⛔️ Not authorized.")
+        await update.message.reply_text("You are not authorized to use this bot.")
         return
 
-    try:
-        text = update.message.text.strip()
-        parts = text.split()
-        if len(parts) != 2:
-            await update.message.reply_text("❌ Format: `<period> <direction>`")
-            return
+    keyboard = [
+        [InlineKeyboardButton("ITM", callback_data="itm")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        period, direction = parts
-        direction = direction.lower()
-        if direction not in ("big", "small"):
-            await update.message.reply_text("❌ Direction must be 'big' or 'small'")
-            return
+    await update.message.reply_text(
+        "Bot started! Predictions will be sent every 30 seconds.",
+        reply_markup=reply_markup,
+    )
 
-        if manager.active:
-            await update.message.reply_text("⚠️ Prediction already running.")
-            return
-
-        manager.start(period, direction)
-
-        # Start the prediction loop
-        asyncio.create_task(send_predictions(context))
-
-        await update.message.reply_text(f"✅ Started predicting from {period} with '{direction.upper()}'")
-
-    except Exception as e:
-        logging.error(f"Error in start_prediction: {e}")
-        await update.message.reply_text("⚠️ An error occurred.")
-
-
-async def send_predictions(context: ContextTypes.DEFAULT_TYPE):
-    while manager.active:
-        text = f"🧠 Prediction\n🆔 {manager.current_period}\n🎯 {manager.direction.upper()}"
-        keyboard = [
-            [InlineKeyboardButton("✅ ITM", callback_data="itm")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        try:
-            await context.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=text,
-                reply_markup=reply_markup
-            )
-        except Exception as e:
-            logging.error(f"Failed to send message: {e}")
-
-        await asyncio.sleep(30)
-        manager.next()
-
-
-async def handle_itm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Callback handler for the "ITM" button
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if update.effective_user.id != OWNER_ID:
-        await query.edit_message_text("⛔️ Only the owner can stop predictions.")
+    if query.from_user.id != OWNER_ID:
+        await query.edit_message_text(text="You are not authorized to press this button.")
         return
 
-    manager.stop()
-    await query.edit_message_text(f"✅ ITM. Prediction stopped at {manager.current_period}.")
+    await query.edit_message_text(text="Profit (ITM) acknowledged, stopping predictions.")
+    # Here, implement logic to stop your prediction loop
 
-
-async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❓ Unknown command or wrong format.\nUse: `2025070122000 big`")
-
-
-async def main():
+# Main function to build the bot application
+def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start_prediction))
-    app.add_handler(CallbackQueryHandler(handle_itm))
-    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_callback))
 
     print("🤖 Bot is running...")
-    await app.run_polling()
-
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

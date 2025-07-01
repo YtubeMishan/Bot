@@ -19,16 +19,20 @@ def fetch_latest_result():
     try:
         ts = int(time.time() * 1000)
         url = f"https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={ts}"
+        
         headers = {
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Referer": "https://dkwin9.com/",
+            "Origin": "https://dkwin9.com",
+            "Accept": "application/json"
         }
 
         response = requests.get(url, headers=headers)
         print(f"Status Code: {response.status_code}")
-        print("Raw Response Text:", response.text[:300])  # Print the first 300 chars of response
+        print("Raw Response Text:", response.text[:300])
 
         response.raise_for_status()
-        data = response.json()  # This will fail if response is not JSON
+        data = response.json()
 
         result_list = data.get("list", [])
         if not result_list:
@@ -39,6 +43,7 @@ def fetch_latest_result():
         period = latest.get("issueNo")
         result = int(latest.get("openCode"))
         return period, result
+
     except Exception as e:
         logging.error(f"Error fetching result: {e}")
         return None, None

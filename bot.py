@@ -24,7 +24,10 @@ def owner_only(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         if user_id != OWNER_ID:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
+            if update.message:
+                await update.message.reply_text("❌ You are not authorized to use this bot.")
+            elif update.callback_query:
+                await update.callback_query.answer("❌ You are not authorized.", show_alert=True)
             return
         return await func(update, context)
     return wrapper
@@ -51,6 +54,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != OWNER_ID:
+        await update.callback_query.answer("❌ Not authorized.", show_alert=True)
+        return
+
     global current_state, period_id, predict_type, send_task
 
     query = update.callback_query
@@ -91,6 +99,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if current_state == WAIT_PERIOD_ID:
+        if not text.isdigit():
+            await update.message.reply_text("Invalid period ID. Please send a numeric period ID.")
+            return
         period_id = text
         current_state = WAIT_TYPE
         await update.message.reply_text(
@@ -118,26 +129,27 @@ async def send_predictions(context: ContextTypes.DEFAULT_TYPE):
     global period_id, predict_type, current_state, send_task
 
     next_period_id = int(period_id)
-    while True:
-        # Compose message with period id and prediction type
-        text = (
-            f"Prediction for period: {next_period_id}\n"
-            f"Type: {predict_type}\n"
-            f"On {CHANNEL_USERNAME}"
-        )
-        try:
-            await context.bot.send_message(CHANNEL_USERNAME, text)
-        except Exception as e:
-            print(f"Error sending message: {e}")
+    try:
+        while True:
+            text = (
+                f"Prediction for period: {next_period_id}\n"
+                f"Type: {predict_type}\n"
+                f"On {CHANNEL_USERNAME}"
+            )
+            try:
+                await context.bot.send_message(CHANNEL_USERNAME, text)
+            except Exception as e:
+                print(f"Error sending message: {e}")
 
-        next_period_id += 1
+            next_period_id += 1
+            await asyncio.sleep(30)
 
-        await asyncio.sleep(30)
-
-        if current_state != RUNNING:
-            break
-
-    send_task = None
+            if current_state != RUNNING:
+                break
+    except asyncio.CancelledError:
+        print("send_predictions task cancelled")
+    finally:
+        send_task = None
 
 
 async def main():

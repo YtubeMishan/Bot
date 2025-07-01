@@ -5,28 +5,31 @@ from telegram import Bot
 
 # === CONFIG ===
 BOT_TOKEN = "7769439864:AAFFaISjadlMAgY-tAr-2BQ5wJZdu85U6QU"
-CHANNEL_ID = "-1002898322642"
+CHANNEL_ID = "-1002898322642"  # Your Telegram channel ID here
 
 bot = Bot(token=BOT_TOKEN)
 
 logging.basicConfig(level=logging.INFO)
 
-# Track last predictions
 history = []
 last_period = None
 predicted_for = None
 
 def fetch_latest_result():
     try:
-        ts = int(time.time() * 1000)  # current timestamp in milliseconds
+        ts = int(time.time() * 1000)
         url = f"https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={ts}"
-        response = requests.get(url)
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
         data = response.json()
         result_list = data.get("list", [])
         if not result_list:
             return None, None
 
-        latest = result_list[0]  # Most recent result
+        latest = result_list[0]
         period = latest.get("issueNo")
         result = int(latest.get("openCode"))
         return period, result
@@ -82,11 +85,10 @@ if __name__ == "__main__":
                 last_period = period
                 logging.info(f"New result: {result} in round {period}")
 
-                # Predict immediately in first 10s of new round
                 prediction, reason = make_prediction()
 
                 if prediction and predicted_for != period:
                     send_prediction(period, prediction, reason)
                     predicted_for = period
 
-        time.sleep(5)  # Check every 5 seconds
+        time.sleep(5)

@@ -1,107 +1,108 @@
 import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    ContextTypes, MessageHandler, filters
+)
 import asyncio
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from prediction import PredictionManager
 
-# ==== CONFIGURATION ====
-BOT_TOKEN = '7769439864:AAHoR601B2jzOzdIIlzShyTFO-twgsqcGkM'
+# === CONFIG ===
+BOT_TOKEN = "6524072744:AAGLnv-NvVKvQDw_JPlEp6byMvHzsVuOCWg"
 OWNER_ID = 7912905599
-CHANNEL_ID = -1002898322642  # @wingo30s_predict
+CHANNEL_ID = -1002898322642  # or @wingo30s_predict
 
-# ==== LOGGING ====
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# === LOGGING ===
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 
-# ==== GLOBAL VARIABLES ====
-predicting = False
-current_period = None
-current_prediction = None
-prediction_task = None
+# === GLOBAL STATE ===
+manager = PredictionManager()
 
-# ==== MESSAGE FORMAT ====
-def format_message(period: str, prediction: str) -> str:
-    return f"""
-✅𝘮𝘰𝘫𝘴 𝘪𝘦𝘭𝘪 
+# === HANDLERS ===
 
-⏩⏩⏩⏩  ⏪⏪⏪⏪ ({period}) 
-
-⚔️𝘬𝘮𝘴𝘰𝘮 30𝘮𝘴 ⏪
-
-❤️‍🔥ℙ𝘳𝘮𝘴𝘮𝘴𝘫𝘮 ⚡️⏩⏩  ⏪⏪⚡️ ({prediction.upper()})
-
-💲𝘪𝘬𝘴𝘮 𝘦𝘪𝘴𝘮𝘯𝘰
-             𝘪𝘦𝘭𝘪
-
-Maintain ⚔️
-
-𝘭𝘰 𝘵𝘮𝘫 ⏩ 𝘭𝘶 𝘪𝘮𝘭𝘰𝘪𝘱 
-
-𝘭𝘮 𝘴𝘮 𝘮𝘱𝘦𝘭 𝘭𝘶♻️
-
-𝘭𝘮 𝘫𝘮𝘭𝘰"""
-
-# ==== PREDICTION LOOP ====
-async def prediction_loop(application):
-    global predicting, current_period
-    while predicting:
-        text = format_message(current_period, current_prediction)
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ ITM", callback_data="itm")]
-        ])
-        await application.bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=keyboard)
-
-        await asyncio.sleep(30)
-        current_period = str(int(current_period) + 1)
-
-# ==== COMMAND HANDLERS ====
 async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global predicting, current_period, current_prediction, prediction_task
-
     if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔️ Not authorized.")
         return
 
     try:
-        args = update.message.text.split()
-        if len(args) != 2:
-            await update.message.reply_text("Send in format: <period> <big/small>")
+        text = update.message.text.strip()
+        parts = text.split()
+        if len(parts) != 2:
+            await update.message.reply_text("❌ Format: `<period> <direction>`")
             return
 
-        current_period = args[0]
-        current_prediction = args[1].lower()
-        predicting = True
+        period, direction = parts
+        direction = direction.lower()
+        if direction not in ("big", "small"):
+            await update.message.reply_text("❌ Direction must be 'big' or 'small'")
+            return
 
-        await update.message.reply_text(f"Started predicting {current_prediction.upper()} from period {current_period}")
+        if manager.active:
+            await update.message.reply_text("⚠️ Prediction already running.")
+            return
 
-        prediction_task = asyncio.create_task(prediction_loop(context.application))
+        manager.start(period, direction)
+
+        # Start the prediction loop
+        asyncio.create_task(send_predictions(context))
+
+        await update.message.reply_text(f"✅ Started predicting from {period} with '{direction.upper()}'")
 
     except Exception as e:
-        logger.error(f"Error: {e}")
-        await update.message.reply_text("Something went wrong.")
+        logging.error(f"Error in start_prediction: {e}")
+        await update.message.reply_text("⚠️ An error occurred.")
 
-async def stop_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global predicting, prediction_task
+
+async def send_predictions(context: ContextTypes.DEFAULT_TYPE):
+    while manager.active:
+        text = f"🧠 Prediction\n🆔 {manager.current_period}\n🎯 {manager.direction.upper()}"
+        keyboard = [
+            [InlineKeyboardButton("✅ ITM", callback_data="itm")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        try:
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=text,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logging.error(f"Failed to send message: {e}")
+
+        await asyncio.sleep(30)
+        manager.next()
+
+
+async def handle_itm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
     if update.effective_user.id != OWNER_ID:
+        await query.edit_message_text("⛔️ Only the owner can stop predictions.")
         return
 
-    predicting = False
-    if prediction_task:
-        prediction_task.cancel()
-        prediction_task = None
+    manager.stop()
+    await query.edit_message_text(f"✅ ITM. Prediction stopped at {manager.current_period}.")
 
-    await update.callback_query.answer("Stopped. ITM achieved!")
-    await update.callback_query.message.reply_text("✅ Profit achieved. Bot stopped.")
 
-# ==== MAIN ====
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❓ Unknown command or wrong format.\nUse: `2025070122000 big`")
+
+
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start_prediction))
-    app.add_handler(CallbackQueryHandler(stop_prediction, pattern="itm"))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start_prediction))
+    app.add_handler(CallbackQueryHandler(handle_itm))
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
-    print("Bot is running...")
+    print("🤖 Bot is running...")
     await app.run_polling()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     asyncio.run(main())

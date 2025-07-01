@@ -3,103 +3,158 @@ import requests
 import logging
 from telegram import Bot
 
-# === CONFIG ===
-BOT_TOKEN = "7769439864:AAFFaISjadlMAgY-tAr-2BQ5wJZdu85U6QU"
-CHANNEL_ID = "-1002898322642"  # Replace with your actual channel ID
+logging.basicConfig(level=logging.INFO)
+
+BOT_TOKEN = "7769439864:AAFFaISjadlMAgY-tAr-2BQ5wJZdu85U6QU"  # your bot token
+CHANNEL_ID = "@Wingo30sec_PredictChannel"  # your telegram channel or chat id
 
 bot = Bot(token=BOT_TOKEN)
 
-logging.basicConfig(level=logging.INFO)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+    "Referer": "https://dkwin9.com/",
+    "Origin": "https://dkwin9.com",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "X-Requested-With": "XMLHttpRequest",
+}
 
-history = []
-last_period = None
-predicted_for = None
+# Optional: fill with cookies copied from browser if needed, else keep empty
+COOKIES = {
+    # "cookie_name": "cookie_value",
+}
 
-def fetch_latest_result():
+API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json"
+
+def fetch_results():
     try:
-        ts = int(time.time() * 1000)
-        url = f"https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json?ts={ts}"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Referer": "https://dkwin9.com/",
-            "Origin": "https://dkwin9.com",
-            "Accept": "application/json"
-        }
-
-        response = requests.get(url, headers=headers)
-        print(f"Status Code: {response.status_code}")
-        print("Raw Response Text:", response.text[:300])
-
-        response.raise_for_status()
-        data = response.json()
-
-        result_list = data.get("list", [])
-        if not result_list:
-            logging.warning("Empty result list in API response.")
-            return None, None
-
-        latest = result_list[0]
-        period = latest.get("issueNo")
-        result = int(latest.get("openCode"))
-        return period, result
-
+        params = {"ts": int(time.time() * 1000)}
+        resp = requests.get(API_URL, headers=HEADERS, cookies=COOKIES, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return data
     except Exception as e:
         logging.error(f"Error fetching result: {e}")
-        return None, None
+        return None
 
-def classify(value):
-    return "SMALL" if value <= 4 else "BIG"
-
-def make_prediction():
-    if len(history) < 2:
-        return None, None
-
-    last_two = [classify(r) for r in history[-2:]]
-
-    if last_two == ["SMALL", "SMALL"]:
-        return "BIG", "Last 2 were SMALL"
-    elif last_two == ["BIG", "BIG"]:
-        return "SMALL", "Last 2 were BIG"
-    else:
-        return None, "Waiting for 2 of same"
-
-def send_prediction(period, prediction, reason):
-    emoji = "🔴" if prediction == "BIG" else "🔵"
-    msg = (
-        f"✅𝗣𝗲𝗿𝗶𝗼𝗱 𝗡𝘂𝗺𝗯𝗲𝗿\n\n"
-        f"⏩⏩⏩⏩  ⏪⏪⏪⏪  {period}\n\n"
-        f"⚜️𝗪𝗶𝗻𝗴𝗼 𝟯𝟬𝘀𝗲𝗰 ⏪\n\n"
-        f"❤️‍🔥𝑷𝒓𝒆𝒅𝒊𝒄𝒕 ⚡️⏩⏩  ⏪⏪⚡️  {prediction} {emoji}\n\n"
-        f"💲𝗚𝗮𝗺𝗲 𝗡𝗮𝗺𝗲👇👇\n"
-        f"         𝗪𝗶𝗻𝗴𝗼\n\n"
-        f"Maintain ⚜️\n\n"
-        f"𝟭𝘀𝘁 𝗕𝗜𝗗 ⏩ 𝟭𝘅 𝗠𝗮𝗶𝗻𝘁𝗮𝗶𝗻\n\n"
-        f"𝗜𝗙 𝗪𝗜𝗡 𝗔𝗴𝗮𝗶𝗻 𝟭𝘅♻️\n\n"
-        f"𝗜𝗙 𝗟𝗢𝗦𝗦 𝟮𝘅\n"
-        f"𝗔𝗚𝗔𝗜𝗡 𝗟𝗢𝗦𝗦 𝟯𝘅 𝗟𝗢𝗦𝗦 𝟰𝘅 𝗟𝗢𝗦𝗦 𝟱𝘅 𝗟𝗢𝗦𝗦 𝟲𝘅 𝗟𝗢𝗦𝗦 𝟳𝘅 𝗟𝗢𝗦𝗦 𝟴𝘅\n\n"
-        f"𝟴𝘅 𝗪𝗶𝗹𝗹 𝗦𝘂𝗽𝗲𝗿𝗦𝗵𝗼𝘁🤑💲"
-    )
+def parse_results(data):
+    # Extract last 2 results: assume 'result' field contains 'big' or 'small'
+    # You need to check exact JSON structure from API response
     try:
-        bot.send_message(chat_id=CHANNEL_ID, text=msg)
-        logging.info(f"Sent prediction: {prediction} for round {period}")
+        history = data['result']['data']
+        last_two = history[:2]  # latest two rounds
+        last_results = []
+        last_periods = []
+        for item in last_two:
+            # Example: "result" field might be number or string
+            # You must map to 'big' or 'small'
+            res = item['result']  # adjust based on actual data key
+            period = item['period']
+            # Assuming result is numeric, define small/big
+            # Change threshold as per your game rules
+            if isinstance(res, str):
+                # If already 'big' or 'small', use directly
+                result_str = res.lower()
+            else:
+                # numeric result to big/small, example threshold 5
+                result_str = "big" if int(res) > 5 else "small"
+
+            last_results.append(result_str)
+            last_periods.append(period)
+        return last_results, last_periods[0]  # last_results[0] = latest result, period is the latest period
     except Exception as e:
-        logging.error(f"Error sending prediction: {e}")
+        logging.error(f"Error parsing result data: {e}")
+        return None, None
+
+def predict_next(last_two_results):
+    # Your algorithm:
+    # If last 2 results small => predict big until big appears, then wait for 2 small again
+    # If last 2 results big => predict small until small appears, then wait for 2 big again
+
+    if len(last_two_results) < 2:
+        return None
+
+    last1, last2 = last_two_results[0], last_two_results[1]
+
+    # Initialize static variables to hold state
+    if not hasattr(predict_next, "waiting_for_big"):
+        predict_next.waiting_for_big = False
+        predict_next.waiting_for_small = False
+
+    if last1 == last2 == "small":
+        predict_next.waiting_for_big = True
+        predict_next.waiting_for_small = False
+        return "big"
+    elif last1 == last2 == "big":
+        predict_next.waiting_for_small = True
+        predict_next.waiting_for_big = False
+        return "small"
+
+    # if waiting_for_big is True, predict big until big appears
+    if predict_next.waiting_for_big:
+        if last1 == "big":
+            # stop waiting, wait for 2 small
+            predict_next.waiting_for_big = False
+            return None
+        else:
+            return "big"
+
+    # if waiting_for_small is True, predict small until small appears
+    if predict_next.waiting_for_small:
+        if last1 == "small":
+            # stop waiting, wait for 2 big
+            predict_next.waiting_for_small = False
+            return None
+        else:
+            return "small"
+
+    return None
+
+def format_message(period, prediction):
+    msg = f"""✅𝗣𝗲𝗿𝗶𝗼𝗱 𝗡𝘂𝗺𝗯𝗲𝗿
+
+⏩⏩⏩⏩  ⏪⏪⏪⏪ {period}
+
+⚜️𝗪𝗶𝗻𝗴𝗼 𝟯𝟬𝘀𝗲𝗰 ⏪
+
+❤️‍🔥𝑷𝒓𝒆𝒅𝒊𝒄𝒕 ⚡️⏩⏩  ⏪⏪⚡️ {prediction.upper()}
+
+💲𝗚𝗮𝗺𝗲 𝗡𝗮𝗺𝗲👇👇
+          𝗪𝗶𝗻𝗴𝗼
+
+Maintain ⚜️
+
+𝟭𝘀𝘁 𝗕𝗜𝗗 ⏩ 𝟭𝘅 𝗠𝗮𝗶𝗻𝘁𝗮𝗶𝗻
+
+𝗜𝗙 𝗪𝗜𝗡 𝗔𝗴𝗮𝗶𝗻 𝟭𝘅♻️
+
+𝗜𝗙 𝗟𝗢𝗦𝗦  𝟮𝘅 
+𝗔𝗚𝗔𝗜𝗡 𝗟𝗢𝗦𝗦 𝟯𝘅 𝗟𝗢𝗦𝗦 𝟰𝘅 𝗟𝗢𝗦𝗦 𝟱𝘅 𝗟𝗢𝗦𝗦 𝟲𝘅 𝗟𝗢𝗦𝗦 𝟳𝘅 𝗟𝗢𝗦𝗦 𝟴𝘅
+
+𝟴𝘅 𝗪𝗶𝗹𝗹 𝗦𝘂𝗽𝗲𝗿𝗦𝗵𝗼𝘁🤑💲
+"""
+    return msg
+
+def main():
+    while True:
+        data = fetch_results()
+        if data:
+            last_results, last_period = parse_results(data)
+            if last_results and last_period:
+                prediction = predict_next(last_results)
+                if prediction:
+                    message = format_message(last_period, prediction)
+                    try:
+                        bot.send_message(CHANNEL_ID, message)
+                        logging.info(f"Sent prediction for period {last_period}: {prediction}")
+                    except Exception as e:
+                        logging.error(f"Telegram send error: {e}")
+                else:
+                    logging.info("No prediction to send this round.")
+            else:
+                logging.warning("Failed to parse results.")
+        else:
+            logging.warning("Failed to fetch results.")
+        time.sleep(30)  # repeat every 30 seconds
 
 if __name__ == "__main__":
-    while True:
-        period, result = fetch_latest_result()
-
-        if period and result:
-            if period != last_period:
-                history.append(result)
-                last_period = period
-                logging.info(f"New result: {result} in round {period}")
-
-                prediction, reason = make_prediction()
-
-                if prediction and predicted_for != period:
-                    send_prediction(period, prediction, reason)
-                    predicted_for = period
-
-        time.sleep(5)
+    main()
